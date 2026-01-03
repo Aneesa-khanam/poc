@@ -78,7 +78,7 @@ services:
       - COHERE_API_KEY=${COHERE_API_KEY}
     volumes:
       - n8n-data:/home/node/.n8n
-      - ./n8n/workflows:/workflows:ro
+      # - ./n8n/workflows:/workflows:ro  # Commented out - workflows can be imported manually in n8n UI
     networks:
       - airr-network
     depends_on:

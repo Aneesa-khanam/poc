@@ -58,7 +58,7 @@ router.get('/cost', async (req: Request, res: Response) => {
  * GET /api/metrics/performance
  * Get performance metrics by model and task type
  */
-router.get('/performance', async (req: Request, res: Response) => {
+router.get('/performance', async (_req: Request, res: Response) => {
   try {
     const { data, error } = await supabase
       .from('v_routing_performance')
@@ -83,7 +83,7 @@ router.get('/performance', async (req: Request, res: Response) => {
  * GET /api/metrics/savings
  * Get cost savings analysis
  */
-router.get('/savings', async (req: Request, res: Response) => {
+router.get('/savings', async (_req: Request, res: Response) => {
   try {
     const { data, error } = await supabase
       .from('v_cost_savings')
@@ -109,7 +109,7 @@ router.get('/savings', async (req: Request, res: Response) => {
  * GET /api/metrics/failures
  * Get failure patterns and analysis
  */
-router.get('/failures', async (req: Request, res: Response) => {
+router.get('/failures', async (_req: Request, res: Response) => {
   try {
     const { data, error } = await supabase
       .from('failure_patterns')

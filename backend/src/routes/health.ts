@@ -7,7 +7,7 @@ const router = Router();
  * GET /health
  * Health check endpoint
  */
-router.get('/', async (req: Request, res: Response) => {
+router.get('/', async (_req: Request, res: Response) => {
   try {
     // Check database connection
     const { error } = await supabase

@@ -189,15 +189,30 @@ export class RouterService {
           return null;
         }
 
+        // Filter by quality requirements
+        // High quality tasks (minQuality >= 0.88) require reasoning capability
+        // This excludes simple tasks like sentiment_analysis (0.85) but includes code_generation (0.90)
+        if (requirements.minQuality >= 0.88) {
+          const capabilities = model.capabilities || {};
+          if (!capabilities.reasoning) {
+            return null; // Exclude models without reasoning for high-quality tasks
+          }
+        }
+
         // Calculate composite score (lower is better)
-        // Weighted: 60% cost, 30% latency, 10% features
+        // Adjust weights based on quality requirements
+        // Higher quality needs = more weight on features
+        const qualityWeight = requirements.minQuality > 0.85 ? 0.4 : 0.1;
+        const costWeight = requirements.minQuality > 0.85 ? 0.4 : 0.6;
+        const latencyWeight = requirements.minQuality > 0.85 ? 0.2 : 0.3;
+
         const costScore = costPer1K / requirements.maxCost; // 0-1
         const latencyScore =
           model.average_latency_ms / requirements.maxLatency; // 0-1
         const featureScore = this.calculateFeatureScore(model); // 0-1
 
         const compositeScore =
-          costScore * 0.6 + latencyScore * 0.3 + (1 - featureScore) * 0.1;
+          costScore * costWeight + latencyScore * latencyWeight + (1 - featureScore) * qualityWeight;
 
         return {
           ...model,

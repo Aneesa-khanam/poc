@@ -148,7 +148,7 @@ router.put('/:id', async (req: Request, res: Response) => {
  * GET /api/models/task-types
  * List all task types
  */
-router.get('/task-types/list', async (req: Request, res: Response) => {
+router.get('/task-types/list', async (_req: Request, res: Response) => {
   try {
     const { data, error } = await supabase
       .from('task_types')

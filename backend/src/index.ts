@@ -42,7 +42,7 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Request logging
-app.use((req: Request, res: Response, next) => {
+app.use((req: Request, _res: Response, next) => {
   logger.info(`${req.method} ${req.path}`, {
     ip: req.ip,
     userAgent: req.get('user-agent'),
@@ -57,7 +57,7 @@ app.use('/api/metrics', metricsRoutes);
 app.use('/api/models', modelsRoutes);
 
 // Root endpoint
-app.get('/', (req: Request, res: Response) => {
+app.get('/', (_req: Request, res: Response) => {
   res.json({
     service: 'Airr 3.0 Model Routing & Cost Controller',
     version: '1.0.0',
