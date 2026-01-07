@@ -1,0 +1,375 @@
+{
+  "name": "Airr Model Router - Task Execution",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "model-router",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook - Task Request",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "model-router-webhook"
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.API_BASE_URL || 'http://localhost:3000' }}/api/route",
+        "authentication": "none",
+        "requestMethod": "POST",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "taskType",
+              "value": "={{ $json.body.taskType }}"
+            },
+            {
+              "name": "inputText",
+              "value": "={{ $json.body.inputText }}"
+            },
+            {
+              "name": "maxCostPer1K",
+              "value": "={{ $json.body.maxCostPer1K }}"
+            },
+            {
+              "name": "maxLatencyMs",
+              "value": "={{ $json.body.maxLatencyMs }}"
+            },
+            {
+              "name": "metadata",
+              "value": "={{ $json.body.metadata }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "get-routing-decision",
+      "name": "Get Routing Decision",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.data.selectedModel.provider }}",
+              "operation": "equals",
+              "value2": "openai"
+            }
+          ]
+        }
+      },
+      "id": "switch-model-provider",
+      "name": "Switch on Provider",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 1,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "resource": "text",
+        "operation": "complete",
+        "modelId": "={{ $('Get Routing Decision').item.json.data.selectedModel.name.includes('3.5') ? 'gpt-3.5-turbo' : 'gpt-4-turbo-preview' }}",
+        "prompt": "={{ $('Webhook - Task Request').item.json.body.inputText }}",
+        "options": {
+          "maxTokens": 1000
+        }
+      },
+      "id": "execute-openai",
+      "name": "Execute OpenAI",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1,
+      "position": [850, 200],
+      "credentials": {
+        "openAiApi": {
+          "id": "1",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "requestMethod": "POST",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $env.ANTHROPIC_API_KEY }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "={{ $('Get Routing Decision').item.json.data.selectedModel.name.includes('Haiku') ? 'claude-3-haiku-20240307' : $('Get Routing Decision').item.json.data.selectedModel.name.includes('Sonnet') ? 'claude-3-sonnet-20240229' : 'claude-3-opus-20240229' }}"
+            },
+            {
+              "name": "max_tokens",
+              "value": "1000"
+            },
+            {
+              "name": "messages",
+              "value": "=[{\"role\": \"user\", \"content\": \"{{ $('Webhook - Task Request').item.json.body.inputText }}\"}]"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "execute-anthropic",
+      "name": "Execute Anthropic",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://api.cohere.ai/v1/generate",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "requestMethod": "POST",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer {{ $env.COHERE_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "={{ $('Get Routing Decision').item.json.data.selectedModel.name.includes('R+') ? 'command-r-plus' : 'command-r' }}"
+            },
+            {
+              "name": "prompt",
+              "value": "={{ $('Webhook - Task Request').item.json.body.inputText }}"
+            },
+            {
+              "name": "max_tokens",
+              "value": "1000"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "execute-cohere",
+      "name": "Execute Cohere",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [850, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse execution result and calculate metrics\nconst routingDecision = $('Get Routing Decision').item.json.data;\nconst webhookBody = $('Webhook - Task Request').item.json.body;\nconst startTime = new Date($input.item.json.executionStartTime || Date.now() - 2000);\nconst endTime = new Date();\n\nlet result = {};\nlet status = 'success';\nlet outputText = '';\nlet inputTokens = 0;\nlet outputTokens = 0;\n\n// Parse response based on provider\nconst provider = routingDecision.selectedModel.provider;\n\ntry {\n  if (provider === 'openai') {\n    const response = $input.item.json;\n    outputText = response.choices?.[0]?.message?.content || response.choices?.[0]?.text || '';\n    inputTokens = response.usage?.prompt_tokens || 0;\n    outputTokens = response.usage?.completion_tokens || 0;\n  } else if (provider === 'anthropic') {\n    const response = $input.item.json;\n    outputText = response.content?.[0]?.text || '';\n    inputTokens = response.usage?.input_tokens || 0;\n    outputTokens = response.usage?.output_tokens || 0;\n  } else if (provider === 'cohere') {\n    const response = $input.item.json;\n    outputText = response.generations?.[0]?.text || '';\n    // Cohere doesn't return token counts in response, estimate\n    inputTokens = Math.ceil(webhookBody.inputText.length / 4);\n    outputTokens = Math.ceil(outputText.length / 4);\n  }\n  \n  if (!outputText) {\n    status = 'failure';\n  }\n} catch (error) {\n  status = 'failure';\n  outputText = '';\n}\n\n// Calculate actual cost\nconst model = routingDecision.selectedModel;\nconst inputCost = (inputTokens / 1000) * (model.cost_per_1k_input_tokens || 0.001);\nconst outputCost = (outputTokens / 1000) * (model.cost_per_1k_output_tokens || 0.003);\nconst actualCost = inputCost + outputCost;\n\n// Calculate quality score (simple heuristic based on output length and coherence)\nconst qualityScore = status === 'success' ? Math.min(0.95, 0.75 + (outputText.length / 1000)) : 0;\n\nreturn {\n  routingDecisionId: routingDecision.routing_decision_id,\n  taskId: routingDecision.taskId,\n  status: status,\n  startedAt: startTime.toISOString(),\n  completedAt: endTime.toISOString(),\n  actualInputTokens: inputTokens,\n  actualOutputTokens: outputTokens,\n  actualCost: parseFloat(actualCost.toFixed(6)),\n  qualityScore: parseFloat(qualityScore.toFixed(2)),\n  confidenceScore: 0.85,\n  resultSummary: outputText.substring(0, 500),\n  errorMessage: status === 'failure' ? 'Execution failed or no output' : null,\n  errorCode: status === 'failure' ? 'EXECUTION_ERROR' : null,\n  executionMetadata: {\n    provider: provider,\n    model: model.name,\n    workflow: 'n8n-model-router'\n  }\n};"
+      },
+      "id": "parse-result",
+      "name": "Parse Execution Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.API_BASE_URL || 'http://localhost:3000' }}/api/route/execute",
+        "authentication": "none",
+        "requestMethod": "POST",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "log-execution",
+      "name": "Log Execution to DB",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [1250, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, taskId: $('Get Routing Decision').item.json.data.taskId, model: $('Get Routing Decision').item.json.data.selectedModel.name, cost: $('Parse Execution Result').item.json.actualCost, latencyMs: new Date($('Parse Execution Result').item.json.completedAt).getTime() - new Date($('Parse Execution Result').item.json.startedAt).getTime(), result: $('Parse Execution Result').item.json.resultSummary }) }}",
+        "options": {}
+      },
+      "id": "respond-to-webhook",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1450, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: false, error: $json.error?.message || 'Unknown error occurred' }) }}",
+        "responseCode": 500,
+        "options": {}
+      },
+      "id": "respond-error",
+      "name": "Respond Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1050, 500]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Add execution start time for latency calculation\nreturn {\n  ...items[0].json,\n  executionStartTime: Date.now()\n};"
+      },
+      "id": "add-timestamp",
+      "name": "Add Execution Timestamp",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 500]
+    }
+  ],
+  "connections": {
+    "Webhook - Task Request": {
+      "main": [
+        [
+          {
+            "node": "Get Routing Decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Routing Decision": {
+      "main": [
+        [
+          {
+            "node": "Add Execution Timestamp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Add Execution Timestamp": {
+      "main": [
+        [
+          {
+            "node": "Switch on Provider",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch on Provider": {
+      "main": [
+        [
+          {
+            "node": "Execute OpenAI",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Execute Anthropic",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Execute Cohere",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute OpenAI": {
+      "main": [
+        [
+          {
+            "node": "Parse Execution Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute Anthropic": {
+      "main": [
+        [
+          {
+            "node": "Parse Execution Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute Cohere": {
+      "main": [
+        [
+          {
+            "node": "Parse Execution Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Execution Result": {
+      "main": [
+        [
+          {
+            "node": "Log Execution to DB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Execution to DB": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "id": "model-router-workflow",
+  "meta": {
+    "instanceId": "airr-model-router"
+  },
+  "tags": []
+}
